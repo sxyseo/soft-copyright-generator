@@ -4,9 +4,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QSpinBox, QMessageBox, QCheckBox,
     QTabWidget, QListWidget, QListWidgetItem, QSplitter, QFrame, QGroupBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QMenuBar, QMenu
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+import json
+from datetime import datetime
 
 # 导入之前实现的软著生成函数（需确保在同一目录）
 from soft_copyright_generator import generate_multiple_docs
@@ -20,6 +23,13 @@ class SoftCodeGeneratorApp(QMainWindow):
         # 批量模式数据存储
         self.batch_projects = []
         self.current_project_index = -1
+        
+        # 工程文件相关
+        self.current_project_file = None
+        self.is_modified = False
+        
+        # 创建菜单栏
+        self.create_menu_bar()
         
         # 创建主部件和标签页
         central_widget = QWidget()
@@ -49,6 +59,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         source_label = QLabel("源代码路径:")
         self.source_edit = QLineEdit()
         self.source_edit.setPlaceholderText("选择源代码目录...")
+        self.source_edit.textChanged.connect(self.mark_modified)
         browse_source_btn = QPushButton("浏览")
         browse_source_btn.clicked.connect(self.browse_source)
         source_layout.addWidget(source_label)
@@ -60,6 +71,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         output_label = QLabel("输出路径:")
         self.output_edit = QLineEdit()
         self.output_edit.setPlaceholderText("选择输出目录...")
+        self.output_edit.textChanged.connect(self.mark_modified)
         browse_output_btn = QPushButton("浏览")
         browse_output_btn.clicked.connect(self.browse_output)
         output_layout.addWidget(output_label)
@@ -72,6 +84,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         self.count_spin = QSpinBox()
         self.count_spin.setRange(1, 100)
         self.count_spin.setValue(1)
+        self.count_spin.valueChanged.connect(self.mark_modified)
         count_layout.addWidget(count_label)
         count_layout.addWidget(self.count_spin)
         count_layout.addStretch()
@@ -81,6 +94,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         name_label = QLabel("项目名称:")
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("输入项目/系统名称")
+        self.name_edit.textChanged.connect(self.mark_modified)
         name_layout.addWidget(name_label)
         name_layout.addWidget(self.name_edit)
         
@@ -90,6 +104,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         self.pages_spin = QSpinBox()
         self.pages_spin.setRange(5, 100)
         self.pages_spin.setValue(30)
+        self.pages_spin.valueChanged.connect(self.mark_modified)
         pages_layout.addWidget(pages_label)
         pages_layout.addWidget(self.pages_spin)
         pages_layout.addStretch()
@@ -99,6 +114,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         self.show_source_checkbox = QCheckBox("显示文件来源信息")
         self.show_source_checkbox.setChecked(False)  # 默认不显示
         self.show_source_checkbox.setToolTip("在生成的文档中显示代码来源文件信息")
+        self.show_source_checkbox.toggled.connect(self.mark_modified)
         source_display_layout.addWidget(self.show_source_checkbox)
         source_display_layout.addStretch()
         
@@ -254,6 +270,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         output_label = QLabel("输出路径:")
         self.batch_output_edit = QLineEdit()
         self.batch_output_edit.setPlaceholderText("选择输出目录...")
+        self.batch_output_edit.textChanged.connect(self.mark_modified)
         browse_output_btn = QPushButton("浏览")
         browse_output_btn.clicked.connect(self.browse_batch_output)
         output_layout.addWidget(output_label)
@@ -264,6 +281,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         self.batch_show_source_checkbox = QCheckBox("显示文件来源信息")
         self.batch_show_source_checkbox.setChecked(False)
         self.batch_show_source_checkbox.setToolTip("在生成的文档中显示代码来源文件信息")
+        self.batch_show_source_checkbox.toggled.connect(self.mark_modified)
         
         global_layout.addLayout(output_layout)
         global_layout.addWidget(self.batch_show_source_checkbox)
@@ -289,6 +307,42 @@ class SoftCodeGeneratorApp(QMainWindow):
         bottom_layout.addWidget(batch_generate_btn)
         
         main_layout.addLayout(bottom_layout)
+
+    def create_menu_bar(self):
+        """创建菜单栏"""
+        menubar = self.menuBar()
+        
+        # 文件菜单
+        file_menu = menubar.addMenu('文件(&F)')
+        
+        # 新建工程
+        new_action = QAction('新建工程(&N)', self)
+        new_action.setShortcut('Ctrl+N')
+        new_action.triggered.connect(self.new_project)
+        file_menu.addAction(new_action)
+        
+        # 打开工程
+        open_action = QAction('打开工程(&O)', self)
+        open_action.setShortcut('Ctrl+O')
+        open_action.triggered.connect(self.open_project)
+        file_menu.addAction(open_action)
+        
+        file_menu.addSeparator()
+        
+        # 保存工程
+        save_action = QAction('保存工程(&S)', self)
+        save_action.setShortcut('Ctrl+S')
+        save_action.triggered.connect(self.save_project)
+        file_menu.addAction(save_action)
+        
+        # 另存为
+        save_as_action = QAction('另存为(&A)', self)
+        save_as_action.setShortcut('Ctrl+Shift+S')
+        save_as_action.triggered.connect(self.save_project_as)
+        file_menu.addAction(save_as_action)
+        
+        # 更新窗口标题
+        self.update_window_title()
 
     def browse_source(self):
         """选择源代码目录"""
@@ -368,6 +422,7 @@ class SoftCodeGeneratorApp(QMainWindow):
         
         # 选中新添加的项目
         self.project_list.setCurrentRow(len(self.batch_projects) - 1)
+        self.mark_modified()
     
     def remove_project(self):
         """删除选中的项目"""
@@ -386,6 +441,7 @@ class SoftCodeGeneratorApp(QMainWindow):
             else:
                 self.current_project_index = -1
                 self.clear_project_details()
+            self.mark_modified()
     
     def on_project_selected(self, row):
         """项目选择改变时的处理"""
@@ -436,6 +492,10 @@ class SoftCodeGeneratorApp(QMainWindow):
             item = self.project_list.item(self.current_project_index)
             if item:
                 item.setText(project['name'])
+            
+            # 只有在不是程序设置时才标记修改
+            if not self.batch_name_edit.signalsBlocked():
+                self.mark_modified()
     
     def add_source_path(self):
         """添加源代码路径"""
@@ -446,6 +506,7 @@ class SoftCodeGeneratorApp(QMainWindow):
                 if dir_path not in project['source_paths']:
                     project['source_paths'].append(dir_path)
                     self.source_paths_list.addItem(dir_path)
+                    self.mark_modified()
                 else:
                     QMessageBox.warning(self, "路径重复", "该路径已存在！")
         else:
@@ -458,6 +519,7 @@ class SoftCodeGeneratorApp(QMainWindow):
             project = self.batch_projects[self.current_project_index]
             del project['source_paths'][current_row]
             self.source_paths_list.takeItem(current_row)
+            self.mark_modified()
     
     def browse_batch_output(self):
         """选择批量输出目录"""
@@ -642,6 +704,269 @@ class SoftCodeGeneratorApp(QMainWindow):
                 p.style = doc.styles['Normal']
         
         doc.save(output_path)
+
+    # 工程文件相关方法
+    def update_window_title(self):
+        """更新窗口标题"""
+        if self.current_project_file:
+            project_name = os.path.basename(self.current_project_file)
+            title = f"软著代码文档生成器 - {project_name}"
+            if self.is_modified:
+                title += " *"
+        else:
+            title = "软著代码文档生成器"
+            if self.is_modified:
+                title += " *"
+        self.setWindowTitle(title)
+
+    def mark_modified(self):
+        """标记为已修改"""
+        if not self.is_modified:
+            self.is_modified = True
+            self.update_window_title()
+
+    def new_project(self):
+        """新建工程"""
+        if self.is_modified:
+            reply = QMessageBox.question(
+                self, '未保存的更改',
+                '当前工程有未保存的更改，是否保存？',
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                if not self.save_project():
+                    return
+            elif reply == QMessageBox.Cancel:
+                return
+        
+        # 清空所有配置
+        self.clear_all_configs()
+        self.current_project_file = None
+        self.is_modified = False
+        self.update_window_title()
+
+    def clear_all_configs(self):
+        """清空所有配置"""
+        # 临时阻塞信号，避免在清空时触发修改标记
+        self.blockSignals(True)
+        
+        # 单个模式
+        self.source_edit.clear()
+        self.output_edit.clear()
+        self.name_edit.clear()
+        self.count_spin.setValue(1)
+        self.pages_spin.setValue(30)
+        self.show_source_checkbox.setChecked(False)
+        
+        # 批量模式
+        self.batch_projects.clear()
+        self.project_list.clear()
+        self.current_project_index = -1
+        self.clear_project_details()
+        self.batch_output_edit.clear()
+        self.batch_show_source_checkbox.setChecked(False)
+        
+        # 切换到单个模式
+        self.tab_widget.setCurrentIndex(0)
+        
+        # 恢复信号
+        self.blockSignals(False)
+
+    def open_project(self):
+        """打开工程文件"""
+        if self.is_modified:
+            reply = QMessageBox.question(
+                self, '未保存的更改',
+                '当前工程有未保存的更改，是否保存？',
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                if not self.save_project():
+                    return
+            elif reply == QMessageBox.Cancel:
+                return
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, '打开工程文件', '',
+            '软著工程文件 (*.scproj);;所有文件 (*)'
+        )
+        
+        if file_path:
+            try:
+                self.load_project_file(file_path)
+                self.current_project_file = file_path
+                self.is_modified = False
+                self.update_window_title()
+                QMessageBox.information(self, '加载成功', '工程文件加载成功！')
+            except Exception as e:
+                QMessageBox.critical(self, '加载失败', f'工程文件加载失败：\n{str(e)}')
+
+    def save_project(self):
+        """保存工程文件"""
+        if self.current_project_file:
+            try:
+                self.save_project_file(self.current_project_file)
+                self.is_modified = False
+                self.update_window_title()
+                return True
+            except Exception as e:
+                QMessageBox.critical(self, '保存失败', f'工程文件保存失败：\n{str(e)}')
+                return False
+        else:
+            return self.save_project_as()
+
+    def save_project_as(self):
+        """另存为工程文件"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, '保存工程文件', '',
+            '软著工程文件 (*.scproj);;所有文件 (*)'
+        )
+        
+        if file_path:
+            if not file_path.endswith('.scproj'):
+                file_path += '.scproj'
+            
+            try:
+                self.save_project_file(file_path)
+                self.current_project_file = file_path
+                self.is_modified = False
+                self.update_window_title()
+                return True
+            except Exception as e:
+                QMessageBox.critical(self, '保存失败', f'工程文件保存失败：\n{str(e)}')
+                return False
+        return False
+
+    def collect_config(self):
+        """收集当前所有配置"""
+        config = {
+            "version": "1.0",
+            "single_mode": {
+                "source_dir": self.source_edit.text(),
+                "output_dir": self.output_edit.text(),
+                "project_name": self.name_edit.text(),
+                "doc_count": self.count_spin.value(),
+                "pages_per_doc": self.pages_spin.value(),
+                "show_source": self.show_source_checkbox.isChecked()
+            },
+            "batch_mode": {
+                "projects": [
+                    {
+                        "name": project["name"],
+                        "source_paths": project["source_paths"][:],  # 复制列表
+                        "doc_count": project["doc_count"],
+                        "pages": project["pages"]
+                    }
+                    for project in self.batch_projects
+                ],
+                "output_dir": self.batch_output_edit.text(),
+                "show_source": self.batch_show_source_checkbox.isChecked()
+            },
+            "settings": {
+                "last_mode": "single" if self.tab_widget.currentIndex() == 0 else "batch",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+        }
+        return config
+
+    def apply_config(self, config):
+        """应用配置到界面"""
+        # 验证配置版本
+        if config.get("version") != "1.0":
+            raise ValueError("不支持的工程文件版本")
+        
+        # 临时阻塞信号，避免加载时触发修改标记
+        self.blockSignals(True)
+        
+        # 清空当前配置
+        self.clear_all_configs()
+        
+        # 应用单个模式配置
+        single_config = config.get("single_mode", {})
+        self.source_edit.setText(single_config.get("source_dir", ""))
+        self.output_edit.setText(single_config.get("output_dir", ""))
+        self.name_edit.setText(single_config.get("project_name", ""))
+        self.count_spin.setValue(single_config.get("doc_count", 1))
+        self.pages_spin.setValue(single_config.get("pages_per_doc", 30))
+        self.show_source_checkbox.setChecked(single_config.get("show_source", False))
+        
+        # 应用批量模式配置
+        batch_config = config.get("batch_mode", {})
+        self.batch_output_edit.setText(batch_config.get("output_dir", ""))
+        self.batch_show_source_checkbox.setChecked(batch_config.get("show_source", False))
+        
+        # 加载批量项目
+        projects = batch_config.get("projects", [])
+        for project_data in projects:
+            project = {
+                "name": project_data.get("name", "未命名项目"),
+                "source_paths": project_data.get("source_paths", []),
+                "doc_count": project_data.get("doc_count", 1),
+                "pages": project_data.get("pages", 30)
+            }
+            self.batch_projects.append(project)
+            
+            # 添加到列表显示
+            item = QListWidgetItem(project["name"])
+            self.project_list.addItem(item)
+        
+        # 设置标签页
+        settings = config.get("settings", {})
+        last_mode = settings.get("last_mode", "single")
+        if last_mode == "batch":
+            self.tab_widget.setCurrentIndex(1)
+        else:
+            self.tab_widget.setCurrentIndex(0)
+        
+        # 如果有批量项目，选中第一个
+        if self.batch_projects:
+            self.project_list.setCurrentRow(0)
+        
+        # 恢复信号
+        self.blockSignals(False)
+
+    def save_project_file(self, file_path):
+        """保存工程文件到指定路径"""
+        config = self.collect_config()
+        
+        # 如果是更新现有文件，保留创建时间
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+                    if "settings" in existing_config and "created_at" in existing_config["settings"]:
+                        config["settings"]["created_at"] = existing_config["settings"]["created_at"]
+            except:
+                pass  # 如果读取失败，使用新的创建时间
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+    def load_project_file(self, file_path):
+        """从指定路径加载工程文件"""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        self.apply_config(config)
+
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        if self.is_modified:
+            reply = QMessageBox.question(
+                self, '未保存的更改',
+                '当前工程有未保存的更改，是否保存？',
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                if not self.save_project():
+                    event.ignore()
+                    return
+            elif reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+        
+        event.accept()
 
 def main():
     """主函数，用作程序入口点"""
